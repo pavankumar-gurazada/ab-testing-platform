@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Experiments · A/B Platform{% endblock %}
+{% block content %}
+<h1>Experiments</h1>
+
+<div class="card">
+  {% if experiments %}
+  <table>
+    <tr><th>Experiment</th><th>Flag</th><th>State</th><th>Test</th><th class="num">Looks</th>
+        <th class="num">Target n/arm</th><th></th></tr>
+    {% for e in experiments %}
+    <tr>
+      <td>{{ e.name }}</td><td>{{ e.flag_key }}</td>
+      <td><span class="badge {{ e.state }}">{{ e.state }}</span></td>
+      <td>{{ e.test_type }}{% if e.use_cuped %} +CUPED{% endif %}</td>
+      <td class="num">{{ e.planned_looks }} ({{ e.spending_function }})</td>
+      <td class="num">{{ e.target_n_per_arm or '—' }}</td>
+      <td><a href="/experiments/{{ e.id }}">setup</a> · <a href="/experiments/{{ e.id }}/analysis">analysis</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No experiments yet.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">New experiment</h2>
+  <form method="post" action="/experiments" style="display:grid; grid-template-columns:repeat(3,minmax(170px,1fr)); gap:.6rem; max-width:780px">
+    <label>Flag<br>
+      <select name="flag_id">{% for f in flags %}<option value="{{ f.id }}">{{ f.key }}</option>{% endfor %}</select></label>
+    <label>Name<br><input name="name" required placeholder="New player vs current"></label>
+    <label>Test type<br>
+      <select name="test_type"><option value="difference">difference (superiority)</option>
+        <option value="noninferiority">non-inferiority</option></select></label>
+    <label>NI margin <span class="muted">(abs, NI only)</span><br>
+      <input type="number" step="any" name="noninferiority_margin" placeholder="0.02"></label>
+    <label>α<br><input type="number" step="0.001" name="alpha" value="0.05"></label>
+    <label>Power<br><input type="number" step="0.01" name="power" value="0.8"></label>
+    <label>Planned looks<br><input type="number" name="planned_looks" value="5" min="1" max="10"></label>
+    <label>Spending function<br>
+      <select name="spending_function"><option value="obrien_fleming">O'Brien-Fleming</option>
+        <option value="pocock">Pocock</option></select></label>
+    <label>CUPED<br><select name="use_cuped"><option value="">off</option><option value="1">on</option></select></label>
+    <label style="grid-column:1/-1">Hypothesis<br>
+      <input name="hypothesis" style="width:100%" placeholder="The new player increases lesson completion by ≥2pp"></label>
+    <div><button>Create experiment</button></div>
+  </form>
+</div>
+{% endblock %}

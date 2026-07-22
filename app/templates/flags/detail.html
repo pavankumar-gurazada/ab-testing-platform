@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}{{ flag.name }} · A/B Platform{% endblock %}
+{% block content %}
+<h1>{{ flag.name }}
+  <span class="badge {{ flag.state }}">{{ flag.state }}</span>
+  {% if flag.paused %}<span class="badge paused">paused</span>{% endif %}
+</h1>
+<p class="muted">{{ flag.description }} &nbsp;·&nbsp; key <code>{{ flag.key }}</code>
+   · salt <code>{{ flag.salt }}</code>
+   · randomizes by <b>{{ flag.randomization_unit }}</b>
+   · analysis entry on <b>{{ flag.exposure_trigger }}</b>
+   &nbsp;·&nbsp; <a href="/flags/{{ flag.id }}/debug">assignment debugger →</a></p>
+
+{% if flag.state == 'rolled_back' %}
+<div class="banner error">Rolled back — the kill switch is on: <b>all</b> traffic (including
+previously assigned units) is served control.</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="card">
+    <h2 style="margin-top:0">Lifecycle</h2>
+    <div class="kv">
+      <dt>Current state</dt><dd><span class="badge {{ flag.state }}">{{ flag.state }}</span></dd>
+      <dt>Rollout</dt><dd>{{ flag.rollout_percent|round(1) }}% of eligible traffic</dd>
+      <dt>Assigned units</dt><dd>{{ counts.assigned }}</dd>
+      <dt>Exposed units</dt><dd>{{ counts.exposed }}
+        <span class="muted">(units that actually saw the feature)</span></dd>
+    </div>
+
+    <h2>Controls</h2>
+    {% for s in next_states %}
+    <form class="inline" method="post" action="/flags/{{ flag.id }}/state">
+      <input type="hidden" name="state" value="{{ s }}">
+      <button class="secondary">→ {{ s }}</button>
+    </form>
+    {% endfor %}
+    {% if flag.state in ('rollout', 'experiment') %}
+      <form class="inline" method="post" action="/flags/{{ flag.id }}/rollout">
+        <input type="number" name="percent" min="0" max="100" step="1" value="{{ flag.rollout_percent|round(0)|int }}">
+        <button>Set rollout %</button>
+      </form>
+      {% if flag.paused %}
+      <form class="inline" method="post" action="/flags/{{ flag.id }}/resume"><button>Resume</button></form>
+      {% else %}
+      <form class="inline" method="post" action="/flags/{{ flag.id }}/pause"><button class="secondary">Pause</button></form>
+      {% endif %}
+    {% endif %}
+    {% if flag.state in ('qa','rollout','experiment') %}
+      <form class="inline" method="post" action="/flags/{{ flag.id }}/rollback"
+            onsubmit="return confirm('Kill switch: serve control to ALL traffic?')">
+        <button class="danger">Rollback</button>
+      </form>
+    {% endif %}
+    {% if flag.state in ('rollout','experiment') %}
+      <form class="inline" method="post" action="/flags/{{ flag.id }}/launch">
+        <button>Launch 🚀</button>
+      </form>
+    {% endif %}
+    <p class="muted">Pause stops <i>new</i> enrollment (already-assigned units keep their
+    variant). Rollback serves control to everyone. Launch makes treatment the default.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Variants &amp; bucket space</h2>
+    <table>
+      <tr><th>Variant</th><th>Role</th><th class="num">Weight</th><th class="num">Assigned</th></tr>
+      {% for v in variants %}
+      <tr>
+        <td>{{ v.name }} <span class="muted">{{ v.key }}</span></td>
+        <td>{% if v.is_control %}control{% else %}treatment{% endif %}</td>
+        <td class="num">{{ v.weight }}</td>
+        <td class="num">{% for bv in by_variant %}{% if bv.variant_key == v.key %}{{ bv.n }}{% endif %}{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    {# Bucket-space visual: rollout gate on top, variant split below #}
+    {% set total_w = variants|sum(attribute='weight') %}
+    <svg viewBox="0 0 400 74" style="width:100%; max-width:480px; margin-top:.8rem">
+      <text x="0" y="10" font-size="9" fill="#667085">rollout gate — hash 1 (buckets 0–9999)</text>
+      <rect x="0" y="14" width="{{ (flag.rollout_percent * 4)|round(1) }}" height="16" fill="#175cd3" rx="2"/>
+      <rect x="{{ (flag.rollout_percent * 4)|round(1) }}" y="14" width="{{ (400 - flag.rollout_percent * 4)|round(1) }}" height="16" fill="#e4e7ec" rx="2"/>
+      <text x="4" y="26" font-size="9" fill="#fff">{{ flag.rollout_percent|round(0)|int }}% in</text>
+      <text x="0" y="48" font-size="9" fill="#667085">variant split among enrolled — hash 2</text>
+      {% set ns = namespace(x=0) %}
+      {% for v in variants %}
+        {% set w = (v.weight / total_w * 400)|round(1) %}
+        <rect x="{{ ns.x }}" y="52" width="{{ w }}" height="16"
+              fill="{% if v.is_control %}#98a2b3{% else %}#6941c6{% endif %}" rx="2"/>
+        <text x="{{ ns.x + 4 }}" y="64" font-size="9" fill="#fff">{{ v.key }}</text>
+        {% set ns.x = ns.x + w %}
+      {% endfor %}
+    </svg>
+
+    <form method="post" action="/flags/{{ flag.id }}/variants" class="inline" style="margin-top:.6rem">
+      {% for v in variants %}
+        <label class="muted">{{ v.key }}
+          <input type="number" step="0.1" min="0" name="{{ 'control_weight' if v.is_control else 'treatment_weight' }}" value="{{ v.weight }}">
+        </label>
+      {% endfor %}
+      <button class="secondary">Update weights</button>
+    </form>
+    <p class="muted">Two independent hashes: ramping the rollout % up only <i>admits new
+    units</i> — nobody already enrolled changes variant.</p>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2 style="margin-top:0">Targeting rules <span class="muted">(AND-ed)</span></h2>
+    {% if rules %}
+    <table>
+      <tr><th>Attribute</th><th>Operator</th><th>Value</th><th></th></tr>
+      {% for r in rules %}
+      <tr>
+        <td>{{ r.attribute }}</td><td>{{ r.operator }}</td><td><code>{{ r.value_display }}</code></td>
+        <td><form method="post" action="/flags/{{ flag.id }}/rules/{{ r.id }}/delete" class="inline">
+            <button class="secondary" style="padding:.1rem .5rem">✕</button></form></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">No rules — all users eligible.
+      {% if flag.state == 'qa' %}(QA state adds an implicit <code>is_qa = true</code> rule.){% endif %}</p>
+    {% endif %}
+    <form method="post" action="/flags/{{ flag.id }}/rules" class="inline" style="margin-top:.5rem">
+      <select name="attribute">
+        <option>platform</option><option>client</option><option>app_version</option><option>is_qa</option>
+      </select>
+      <select name="operator">
+        <option>eq</option><option>in</option><option>semver_gte</option><option>semver_lt</option>
+      </select>
+      <input name="value" placeholder="ios,android or 4.1.0" required>
+      <button class="secondary">Add rule</button>
+    </form>
+    <p class="muted">For <code>in</code>, give a comma-separated list.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">History</h2>
+    {% if history %}
+    <table>
+      <tr><th>Sim day</th><th>Action</th><th class="num">%</th><th>Note</th></tr>
+      {% for h in history %}
+      <tr><td>{{ h.sim_day }}</td><td>{{ h.action }}</td>
+          <td class="num">{{ h.percent|round(1) if h.percent is not none else '—' }}</td>
+          <td class="muted">{{ h.note }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">No actions yet.</p>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Experiments on this flag</h2>
+  {% if experiments %}
+  <table>
+    <tr><th>Name</th><th>State</th><th>Type</th><th class="num">Looks</th><th></th></tr>
+    {% for e in experiments %}
+    <tr><td>{{ e.name }}</td><td><span class="badge {{ e.state }}">{{ e.state }}</span></td>
+        <td>{{ e.test_type }}</td><td class="num">{{ e.planned_looks }}</td>
+        <td><a href="/experiments/{{ e.id }}">open →</a></td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">None yet. <a href="/experiments">Create an experiment</a> and attach it to
+  this flag (flag should be in <b>experiment</b> state to enroll traffic for analysis).</p>
+  {% endif %}
+</div>
+
+<p class="muted">Monitoring: <a href="/flags/{{ flag.id }}/monitoring">daily metric series &amp;
+guardrails for this flag →</a></p>
+{% endblock %}

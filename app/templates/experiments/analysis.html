@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Analysis · {{ exp.name }}{% endblock %}
+{% block content %}
+<h1>Analysis <span class="muted">— {{ exp.name }}</span>
+  <span class="badge {{ exp.state }}">{{ exp.state }}</span></h1>
+<p class="muted"><a href="/experiments/{{ exp.id }}">← setup</a>
+  · flag <a href="/flags/{{ flag.id }}">{{ flag.key }}</a>
+  · population entry via <b>{{ flag.exposure_trigger }}</b>
+  · {{ exp.spending_function }} spending, {{ exp.planned_looks }} planned looks
+  · target {{ exp.target_n_per_arm }} / arm</p>
+
+{% if latest and latest.srm_flag %}
+<div class="banner error"><b>⚠ Sample ratio mismatch</b> — χ² = {{ latest.srm_chi2|round(2) }},
+p = {{ '%.2e'|format(latest.srm_p) }} (threshold 0.001). The observed variant counts are not
+consistent with the configured split: units are going missing somewhere. <b>Do not trust any
+result below</b> — find the logging/assignment bug first (simulator anomaly mode?).</div>
+{% endif %}
+
+{% if latest and latest.decision == 'guardrail_breach' %}
+<div class="banner error"><b>Guardrail breach</b> — a guardrail metric is significantly moving
+the wrong way. Consider pausing or rolling back the flag.</div>
+{% elif exp.state == 'stopped_efficacy' %}
+<div class="banner ok"><b>Stopped early for efficacy</b> at look {{ latest.look_number }}
+(day {{ latest.sim_day }}): the success metric crossed the alpha-spending boundary.</div>
+{% elif exp.state == 'stopped_futility' %}
+<div class="banner warn"><b>Stopped for futility</b> at look {{ latest.look_number }}:
+conditional power {{ (latest.futility_conditional_power*100)|round(1) }}% &lt; 20% — even the
+current trend is unlikely to cross the final boundary.</div>
+{% elif exp.state == 'completed' %}
+<div class="banner warn"><b>Completed all looks</b> without crossing the efficacy boundary.</div>
+{% endif %}
+
+{% if exp.state == 'running' %}
+<div class="card">
+  <form method="post" action="/experiments/{{ exp.id }}/looks" class="inline">
+    <button>Run look {{ (looks|length) + 1 }} of {{ exp.planned_looks }} ▶</button>
+  </form>
+  <span class="muted">Analyzes all completed sim days. Advance the
+  <a href="/simulator">simulator</a> between looks.</span>
+</div>
+{% endif %}
+
+{% if looks %}
+<div class="card">
+  <h2 style="margin-top:0">Alpha-spending ledger</h2>
+  <table>
+    <tr><th class="num">Look</th><th class="num">Sim day</th><th class="num">Info fraction</th>
+        <th class="num">α this look</th><th class="num">α cumulative</th>
+        <th class="num">z boundary</th><th class="num">observed z</th>
+        <th class="num">cond. power</th><th>SRM</th><th>Decision</th></tr>
+    {% for lk in looks %}
+    {% set primary_r = (look_results[lk.id] | selectattr('role','equalto','success') | list | first) %}
+    <tr>
+      <td class="num">{{ lk.look_number }}</td>
+      <td class="num">{{ lk.sim_day }}</td>
+      <td class="num">{{ lk.information_fraction|round(3) }}</td>
+      <td class="num">{{ '%.5f'|format(lk.alpha_spent_this_look) }}</td>
+      <td class="num">{{ '%.5f'|format(lk.alpha_spent_cumulative) }}</td>
+      <td class="num"><b>{{ lk.efficacy_z_boundary|round(3) }}</b></td>
+      <td class="num">{% if primary_r %}{{ primary_r.z_stat|round(3) }}
+        {% if primary_r.crossed_boundary %} ✅{% endif %}{% else %}—{% endif %}</td>
+      <td class="num">{{ (lk.futility_conditional_power*100)|round(1) ~ '%' if lk.futility_conditional_power is not none else '—' }}</td>
+      <td>{% if lk.srm_flag %}<span style="color:var(--bad)">⚠</span>{% else %}ok{% endif %}</td>
+      <td>{{ lk.decision }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">The bar (z boundary) starts very high and descends as information accrues —
+  early peeks are allowed but expensive. The α column shows exactly how much of the
+  {{ exp.alpha }} budget each look consumed.</p>
+</div>
+
+{# ---- boundary SVG: planned boundary curve + observed z path ---- #}
+<div class="card">
+  <h2 style="margin-top:0">Boundary plot</h2>
+  {% set W, H, PAD = 640, 260, 36 %}
+  {% set zmax = 5.2 %}
+  <svg viewBox="0 0 {{ W }} {{ H }}" style="width:100%; max-width:720px">
+    {# axes #}
+    <line x1="{{ PAD }}" y1="{{ H-PAD }}" x2="{{ W-8 }}" y2="{{ H-PAD }}" stroke="#98a2b3"/>
+    <line x1="{{ PAD }}" y1="8" x2="{{ PAD }}" y2="{{ H-PAD }}" stroke="#98a2b3"/>
+    {% for z in [1,2,3,4,5] %}
+    <text x="{{ PAD-6 }}" y="{{ H-PAD - z/zmax*(H-PAD-16) + 4 }}" font-size="10" fill="#667085" text-anchor="end">{{ z }}</text>
+    <line x1="{{ PAD }}" y1="{{ H-PAD - z/zmax*(H-PAD-16) }}" x2="{{ W-8 }}" y2="{{ H-PAD - z/zmax*(H-PAD-16) }}" stroke="#f2f4f7"/>
+    {% endfor %}
+    {% for t in [0.25, 0.5, 0.75, 1.0] %}
+    <text x="{{ PAD + t*(W-PAD-16) }}" y="{{ H-PAD+14 }}" font-size="10" fill="#667085" text-anchor="middle">{{ t }}</text>
+    {% endfor %}
+    <text x="{{ W/2 }}" y="{{ H-6 }}" font-size="10" fill="#667085" text-anchor="middle">information fraction</text>
+    <text x="10" y="14" font-size="10" fill="#667085">|z|</text>
+
+    {# planned boundary curve #}
+    {% set pts = [] %}
+    {% for lk in planned %}
+      {% set x = PAD + lk.information_fraction*(W-PAD-16) %}
+      {% set y = H-PAD - [lk.z_boundary, zmax]|min/zmax*(H-PAD-16) %}
+      {% set _ = pts.append(x|string ~ ',' ~ y|string) %}
+    {% endfor %}
+    <polyline points="{{ pts|join(' ') }}" fill="none" stroke="#175cd3" stroke-width="2" stroke-dasharray="5 3"/>
+    {% for lk in planned %}
+      <circle cx="{{ PAD + lk.information_fraction*(W-PAD-16) }}"
+              cy="{{ H-PAD - [lk.z_boundary, zmax]|min/zmax*(H-PAD-16) }}" r="3" fill="#175cd3"/>
+    {% endfor %}
+
+    {# observed |z| path of the primary metric #}
+    {% set opts = [] %}
+    {% for lk in looks %}
+      {% set primary_r = (look_results[lk.id] | selectattr('role','equalto','success') | list | first) %}
+      {% if primary_r %}
+        {% set x = PAD + lk.information_fraction*(W-PAD-16) %}
+        {% set zval = primary_r.z_stat|abs %}
+        {% set y = H-PAD - [zval, zmax]|min/zmax*(H-PAD-16) %}
+        {% set _ = opts.append(x|string ~ ',' ~ y|string) %}
+      {% endif %}
+    {% endfor %}
+    {% if opts %}
+    <polyline points="{{ opts|join(' ') }}" fill="none" stroke="#6941c6" stroke-width="2"/>
+    {% for p in opts %}<circle cx="{{ p.split(',')[0] }}" cy="{{ p.split(',')[1] }}" r="4" fill="#6941c6"/>{% endfor %}
+    {% endif %}
+    <text x="{{ W-160 }}" y="20" font-size="10" fill="#175cd3">— — planned boundary</text>
+    <text x="{{ W-160 }}" y="34" font-size="10" fill="#6941c6">—— observed |z| (primary)</text>
+  </svg>
+  <p class="muted">Stop for efficacy when the purple path climbs above the dashed boundary.</p>
+</div>
+
+{# ---- latest look: per-metric results ---- #}
+<div class="card">
+  <h2 style="margin-top:0">Look {{ latest.look_number }} results
+    <span class="muted">(as of sim day {{ latest.sim_day }})</span></h2>
+  <table>
+    <tr><th>Metric</th><th>Role</th><th class="num">n (c/t)</th>
+        <th class="num">control</th><th class="num">treatment</th>
+        <th class="num">effect</th><th class="num">CI</th>
+        <th class="num">z</th><th class="num">p</th><th class="num">CUPED</th></tr>
+    {% for r in latest_results %}
+    <tr {% if r.role == 'guardrail' and r.crossed_boundary %}style="background:#fef3f2"{% endif %}>
+      <td>{{ r.metric_name }} {{ '↑' if r.direction=='increase' else '↓' }}</td>
+      <td><span class="badge {{ r.role }}">{{ r.role }}</span>
+          {% if r.role == 'success' and r.crossed_boundary %}✅{% endif %}
+          {% if r.role == 'guardrail' and r.crossed_boundary %}⚠{% endif %}</td>
+      <td class="num">{{ r.control_n }}/{{ r.treatment_n }}</td>
+      <td class="num">{{ '%.4g'|format(r.control_mean) }}</td>
+      <td class="num">{{ '%.4g'|format(r.treatment_mean) }}</td>
+      <td class="num"><b>{{ '%+.4g'|format(r.effect) }}</b></td>
+      <td class="num">[{{ '%.4g'|format(r.ci_low) }}, {{ '%.4g'|format(r.ci_high) }}]</td>
+      <td class="num">{{ r.z_stat|round(3) }}</td>
+      <td class="num">{{ '%.4f'|format(r.p_value) }}</td>
+      <td class="num">{% if r.cuped_applied %}θ={{ r.cuped_theta|round(3) }},
+        −{{ r.variance_reduction_pct|round(1) }}% var{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Success metrics show <b>repeated CIs</b> (boundary-width, sequential-valid);
+  guardrail/supporting metrics show ordinary Wald CIs. Guardrails use a one-sided harm test at
+  α = 0.05.</p>
+</div>
+{% else %}
+<div class="card"><p class="muted">No looks yet.
+  {% if exp.state == 'draft' %}Start the experiment from the <a href="/experiments/{{ exp.id }}">setup page</a> first.{% endif %}</p></div>
+{% endif %}
+
+{% if effects %}
+<div class="card">
+  <h2 style="margin-top:0">Ground truth (simulator)</h2>
+  <table>
+    <tr><th>Variant</th><th>Parameter</th><th class="num">True value</th></tr>
+    {% for e in effects %}
+    <tr><td>{{ e.variant_key }}</td><td><code>{{ e.parameter }}</code></td><td class="num">{{ e.value }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Compare against the estimates above. Expect measured effects ≈ truth × the
+  fraction of the population actually exposed on any given day.</p>
+</div>
+{% endif %}
+{% endblock %}

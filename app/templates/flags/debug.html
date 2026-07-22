@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Debugger · {{ flag.name }}{% endblock %}
+{% block content %}
+<h1>Assignment debugger <span class="muted">— {{ flag.name }}</span></h1>
+<p class="muted">Resolves a variant for any unit id <b>without enrolling it</b>, and explains
+every step of the decision. Try a simulated user id (e.g. <code>u00042</code>) or any string.</p>
+
+<div class="card">
+  <form method="get" action="/flags/{{ flag.id }}/debug" class="inline">
+    <input name="unit_id" value="{{ unit_id }}" placeholder="u00042" required>
+    <button>Resolve</button>
+  </form>
+</div>
+
+{% if result %}
+<div class="card">
+  <h2 style="margin-top:0">Result for <code>{{ unit_id }}</code></h2>
+  <div class="kv">
+    <dt>Variant</dt><dd><b>{{ result.variant_key }}</b></dd>
+    <dt>Reason</dt><dd><code>{{ result.reason }}</code></dd>
+    <dt>Detail</dt><dd>{{ result.detail }}</dd>
+    {% if result.rollout_bucket is not none %}
+    <dt>Rollout bucket</dt><dd>{{ result.rollout_bucket }} / 10000
+      <span class="muted">(in rollout if &lt; {{ (flag.rollout_percent * 100)|round(0)|int }})</span></dd>
+    <dt>Variant bucket</dt><dd>{{ result.variant_bucket }} / 10000</dd>
+    {% endif %}
+  </div>
+  {% if attrs %}
+  <h2>Unit attributes used for targeting</h2>
+  <div class="kv">
+    {% for k, v in attrs.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<p><a href="/flags/{{ flag.id }}">← back to flag</a></p>
+{% endblock %}

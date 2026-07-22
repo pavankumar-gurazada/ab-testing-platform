@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ exp.name }} · Experiments{% endblock %}
+{% block content %}
+<h1>{{ exp.name }} <span class="badge {{ exp.state }}">{{ exp.state }}</span></h1>
+<p class="muted">on flag <a href="/flags/{{ flag.id }}">{{ flag.key }}</a>
+  · {{ exp.test_type }}{% if exp.noninferiority_margin %} (margin {{ exp.noninferiority_margin }}){% endif %}
+  · α={{ exp.alpha }} · power={{ exp.power }}
+  · {{ exp.planned_looks }} looks, {{ exp.spending_function }}
+  · CUPED {{ 'on' if exp.use_cuped else 'off' }}
+  &nbsp;·&nbsp; <a href="/experiments/{{ exp.id }}/analysis">analysis →</a></p>
+{% if exp.hypothesis %}<p><i>“{{ exp.hypothesis }}”</i></p>{% endif %}
+
+<div class="grid2">
+  <div class="card">
+    <h2 style="margin-top:0">Metrics &amp; roles</h2>
+    {% if attached %}
+    <table>
+      <tr><th>Metric</th><th>Type</th><th>Role</th><th></th></tr>
+      {% for m in attached %}
+      <tr><td>{{ m.name }}</td><td>{{ m.type }} {{ '↑' if m.direction=='increase' else '↓' }}</td>
+          <td><span class="badge {{ m.role }}">{{ m.role }}</span></td>
+          <td><form method="post" action="/experiments/{{ exp.id }}/metrics/{{ m.id }}/delete" class="inline">
+              <button class="secondary" style="padding:.1rem .5rem">✕</button></form></td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">No metrics attached. Attach at least one <b>success</b> metric.</p>{% endif %}
+    <form method="post" action="/experiments/{{ exp.id }}/metrics" class="inline" style="margin-top:.5rem">
+      <select name="metric_id">{% for m in all_metrics %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select>
+      <select name="role"><option>success</option><option>guardrail</option><option>supporting</option></select>
+      <button class="secondary">Attach</button>
+    </form>
+    <p class="muted"><b>success</b> drives the stop/ship decision (sequential boundaries apply) ·
+    <b>guardrail</b> must not regress (one-sided harm check) · <b>supporting</b> is informational.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Statistical design</h2>
+    {% if exp.target_n_per_arm %}
+    <div class="kv">
+      <dt>MDE</dt><dd>{{ exp.mde }}</dd>
+      <dt>Target n / arm</dt><dd><b>{{ exp.target_n_per_arm }}</b>
+        <span class="muted">(max; sequential designs can stop earlier)</span></dd>
+      <dt>Expected duration</dt><dd>{{ exp.expected_duration_days or '?' }} sim days</dd>
+    </div>
+    {% else %}<p class="muted">Not designed yet — set the MDE below.</p>{% endif %}
+
+    {% if primary %}
+    <form method="post" action="/experiments/{{ exp.id }}/design" class="inline" style="margin-top:.5rem; flex-wrap:wrap">
+      <label class="muted">MDE (abs) <input type="number" step="any" name="mde" value="{{ exp.mde or '' }}" required></label>
+      <label class="muted">baseline <input type="number" step="any" name="baseline" value="{{ baseline if baseline is not none else '' }}" required></label>
+      <label class="muted">sd <input type="number" step="any" name="sd" value="{{ baseline_sd if baseline_sd is not none else '' }}"></label>
+      <button>Compute design</button>
+    </form>
+    <p class="muted">Baseline and sd are pre-filled from the <b>pre-period</b> measurement of
+    the primary success metric ({{ primary.name }}); adjust freely. sd is unused for proportions.</p>
+    {% else %}
+    <p class="muted">Attach a success metric first — the design is powered on the primary
+    success metric.</p>
+    {% endif %}
+
+    <h2>Planned boundary schedule</h2>
+    <table>
+      <tr><th class="num">Look</th><th class="num">Info fraction</th><th class="num">z boundary</th>
+          <th class="num">cumulative α</th></tr>
+      {% for lk in boundary_preview %}
+      <tr><td class="num">{{ lk.number }}</td><td class="num">{{ lk.information_fraction|round(2) }}</td>
+          <td class="num">{{ lk.z_boundary|round(3) }}</td>
+          <td class="num">{{ lk.alpha_spent_cumulative|round(4) }}</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>Lifecycle</h2>
+    {% if exp.state == 'draft' %}
+    <form method="post" action="/experiments/{{ exp.id }}/start" class="inline">
+      <button {% if not exp.target_n_per_arm %}disabled title="design first"{% endif %}>Start experiment</button>
+    </form>
+    <p class="muted">Start flips the flag to <b>experiment</b> state; the analysis population
+    is every unit entering from that sim day onward. Looks taken so far: {{ looks_taken }}.</p>
+    {% elif exp.state == 'running' %}
+    <form method="post" action="/experiments/{{ exp.id }}/stop" class="inline"
+          onsubmit="return confirm('Abort this experiment?')">
+      <button class="danger">Abort</button>
+    </form>
+    {% else %}
+    <p class="muted">Finished (day {{ exp.end_sim_day }}). See the
+      <a href="/experiments/{{ exp.id }}/analysis">analysis</a> and
+      <a href="/experiments/{{ exp.id }}/release">release analytics</a>.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if effects %}
+<div class="card">
+  <h2 style="margin-top:0">Simulator ground truth 🔍</h2>
+  <table>
+    <tr><th>Variant</th><th>Parameter</th><th class="num">True value</th></tr>
+    {% for e in effects %}
+    <tr><td>{{ e.variant_key }}</td><td><code>{{ e.parameter }}</code></td>
+        <td class="num">{{ e.value }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">The game: will the analysis recover these? (Measured effects will be
+  diluted by the 70% surface-touch rate — assigned-but-never-exposed units shrink
+  assignment-triggered estimates.)</p>
+</div>
+{% endif %}
+{% endblock %}

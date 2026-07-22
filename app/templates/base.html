@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}A/B Platform{% endblock %}</title>
+<style>
+  :root { --ink:#1a1d23; --muted:#667085; --line:#e4e7ec; --bg:#f8f9fb; --card:#fff;
+          --accent:#175cd3; --good:#067647; --bad:#b42318; --warn:#b54708; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+         color:var(--ink); background:var(--bg); }
+  nav { display:flex; align-items:center; gap:1.2rem; padding:.6rem 1.2rem;
+        background:var(--card); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  nav .brand { font-weight:700; color:var(--ink); }
+  nav a { color:var(--muted); text-decoration:none; }
+  nav a:hover { color:var(--accent); }
+  .clock { margin-left:auto; font-size:.85rem; color:var(--muted);
+           background:var(--bg); border:1px solid var(--line); border-radius:6px;
+           padding:.15rem .6rem; }
+  .clock b { color:var(--ink); }
+  main { max-width:1080px; margin:1.5rem auto; padding:0 1.2rem; }
+  h1 { font-size:1.4rem; margin:.2rem 0 1rem; } h2 { font-size:1.1rem; margin:1.4rem 0 .5rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:1rem 1.2rem; margin-bottom:1rem; }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; }
+  th, td { text-align:left; padding:.4rem .6rem; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:.8rem; text-transform:uppercase;
+       letter-spacing:.03em; }
+  tr:last-child td { border-bottom:none; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  form.inline { display:inline-flex; gap:.4rem; align-items:center; margin:0; }
+  input, select, textarea { font:inherit; padding:.35rem .5rem; border:1px solid var(--line);
+          border-radius:6px; background:#fff; }
+  input[type=number] { width:6rem; }
+  button { font:inherit; padding:.35rem .8rem; border:1px solid var(--accent);
+           border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; }
+  button:hover { filter:brightness(1.1); }
+  button.secondary { background:#fff; color:var(--accent); }
+  button.danger { background:var(--bad); border-color:var(--bad); }
+  .badge { display:inline-block; padding:.1rem .55rem; border-radius:999px;
+           font-size:.75rem; font-weight:600; border:1px solid transparent; }
+  .badge.draft       { background:#f2f4f7; color:var(--muted); }
+  .badge.qa          { background:#fef0c7; color:var(--warn); }
+  .badge.rollout     { background:#d1e9ff; color:var(--accent); }
+  .badge.experiment  { background:#e9d7fe; color:#6941c6; }
+  .badge.launched    { background:#d1fadf; color:var(--good); }
+  .badge.rolled_back { background:#fee4e2; color:var(--bad); }
+  .badge.paused      { background:#fee4e2; color:var(--bad); }
+  .badge.running          { background:#d1e9ff; color:var(--accent); }
+  .badge.stopped_efficacy { background:#d1fadf; color:var(--good); }
+  .badge.stopped_futility { background:#fee4e2; color:var(--bad); }
+  .badge.completed        { background:#f2f4f7; color:var(--muted); }
+  .badge.success    { background:#d1fadf; color:var(--good); }
+  .badge.guardrail  { background:#fee4e2; color:var(--bad); }
+  .badge.supporting { background:#f2f4f7; color:var(--muted); }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .kv { display:grid; grid-template-columns:max-content 1fr; gap:.15rem 1rem; font-size:.9rem; }
+  .kv dt { color:var(--muted); } .kv dd { margin:0; }
+  .banner { border-radius:8px; padding:.6rem 1rem; margin-bottom:1rem; font-size:.9rem; }
+  .banner.error { background:#fee4e2; color:var(--bad); border:1px solid #fecdca; }
+  .banner.ok    { background:#d1fadf; color:var(--good); border:1px solid #a6f4c5; }
+  .banner.warn  { background:#fef0c7; color:var(--warn); border:1px solid #fedf89; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+  @media (max-width:800px) { .grid2 { grid-template-columns:1fr; } }
+  svg text { font-family:inherit; }
+  code { background:#f2f4f7; border-radius:4px; padding:.05rem .3rem; font-size:.85em; }
+</style>
+</head>
+<body>
+<nav>
+  <a class="brand" href="/">A/B Platform</a>
+  <a href="/flags">Flags</a>
+  <a href="/metrics">Metrics</a>
+  <a href="/experiments">Experiments</a>
+  <a href="/calculator">Calculator</a>
+  <a href="/simulator">Simulator</a>
+  <span class="clock">sim day <b>{{ clock.current_sim_day }}</b>
+    · pop <b>{{ clock.population_size }}</b>
+    {% if clock.anomaly_mode != 'none' %} · <span style="color:var(--bad)">anomaly: {{ clock.anomaly_mode }}</span>{% endif %}
+  </span>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

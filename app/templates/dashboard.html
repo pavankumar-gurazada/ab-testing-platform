@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · A/B Platform{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card">
+  <h2 style="margin-top:0">Flags</h2>
+  {% if flags %}
+  <table>
+    <tr><th>Flag</th><th>App</th><th>State</th><th class="num">Rollout %</th><th class="num">Assigned</th></tr>
+    {% for f in flags %}
+    <tr>
+      <td><a href="/flags/{{ f.id }}">{{ f.name }}</a> <span class="muted">{{ f.key }}</span></td>
+      <td>{{ f.app_name }}</td>
+      <td><span class="badge {{ f.state }}">{{ f.state }}</span>
+          {% if f.paused %}<span class="badge paused">paused</span>{% endif %}</td>
+      <td class="num">{{ f.rollout_percent|round(1) }}</td>
+      <td class="num">{{ f.n_assigned }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No flags yet — <a href="/flags">create one</a>.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Experiments</h2>
+  {% if experiments %}
+  <table>
+    <tr><th>Experiment</th><th>Flag</th><th>State</th><th>Type</th><th class="num">Planned looks</th></tr>
+    {% for e in experiments %}
+    <tr>
+      <td><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
+      <td>{{ e.flag_name }}</td>
+      <td><span class="badge {{ e.state }}">{{ e.state }}</span></td>
+      <td>{{ e.test_type }}</td>
+      <td class="num">{{ e.planned_looks }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No experiments yet.</p>{% endif %}
+</div>
+
+<div class="card muted">
+  Typical walkthrough: <b>Simulator</b> → init population &amp; run pre-period →
+  <b>Flags</b> → QA → gradual rollout → attach an <b>experiment</b> with metrics →
+  set true effects in the simulator → advance days → run interim <b>looks</b>.
+</div>
+{% endblock %}

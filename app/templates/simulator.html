@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Simulator · A/B Platform{% endblock %}
+{% block content %}
+<h1>Traffic simulator</h1>
+<p class="muted">Synthetic learners with heterogeneous latent traits generate events on a
+fast-forward clock. Configure <b>true effects</b> per variant, then check whether the
+analysis recovers them.</p>
+
+{% if state.anomaly_mode != 'none' %}
+<div class="banner warn">Anomaly mode <b>{{ state.anomaly_mode }}</b> is active —
+{% if state.anomaly_mode == 'srm_bug' %}25% of treatment assignment &amp; exposure records
+are being silently dropped — the users still get the treatment, only the records vanish
+(SRM detection should fire).{% else %}treatment is being
+degraded (+150&nbsp;ms latency, −1&nbsp;pp completion) regardless of configured effects
+(guardrails should trip).{% endif %}</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="card">
+    <h2 style="margin-top:0">Clock &amp; population</h2>
+    <div class="kv">
+      <dt>Current sim day</dt><dd><b>{{ state.current_sim_day }}</b></dd>
+      <dt>Population</dt><dd>{{ state.population_size }} users</dd>
+      <dt>Pre-period</dt><dd>{{ state.pre_period_days }} days
+        {% if pre_stats and pre_stats.n %}
+        <span class="muted">(avg {{ pre_stats.avg_lessons|round(1) }} lessons,
+        {{ pre_stats.avg_watch|round(0)|int }}s watch per user)</span>{% endif %}</dd>
+      <dt>RNG seed</dt><dd>{{ state.rng_seed }}</dd>
+    </div>
+
+    <h2>Initialize</h2>
+    <form method="post" action="/simulator/init" class="inline">
+      <label class="muted">pop <input type="number" name="population_size" value="20000" min="100"></label>
+      <label class="muted">seed <input type="number" name="seed" value="42"></label>
+      <label class="muted">pre-days <input type="number" name="pre_period_days" value="14" min="0"></label>
+      <button onclick="return confirm('Re-initializing wipes all simulated data. Continue?')">Init population</button>
+    </form>
+    <p class="muted">Init wipes events/assignments and regenerates users; the pre-period runs
+    immediately (negative sim days) to collect CUPED covariates.</p>
+
+    <h2>Advance</h2>
+    <form method="post" action="/simulator/advance" class="inline">
+      <input type="number" name="days" value="7" min="1" max="120">
+      <button>Advance days ▶▶</button>
+    </form>
+
+    <h2>Anomaly injection</h2>
+    <form method="post" action="/simulator/anomaly" class="inline">
+      <select name="mode">
+        <option value="none" {% if state.anomaly_mode=='none' %}selected{% endif %}>none</option>
+        <option value="srm_bug" {% if state.anomaly_mode=='srm_bug' %}selected{% endif %}>srm_bug — silently drop 25% of treatment records</option>
+        <option value="guardrail_degrade" {% if state.anomaly_mode=='guardrail_degrade' %}selected{% endif %}>guardrail_degrade — slow &amp; hurt treatment</option>
+      </select>
+      <button class="secondary">Set mode</button>
+    </form>
+
+    <h2>Reset</h2>
+    <form method="post" action="/simulator/reset"
+          onsubmit="return confirm('Delete ALL simulated data and reset flags to draft?')">
+      <button class="danger">Reset simulation</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">True effects (ground truth)</h2>
+    {% if effects %}
+    <table>
+      <tr><th>Flag</th><th>Variant</th><th>Parameter</th><th class="num">Value</th><th></th></tr>
+      {% for e in effects %}
+      <tr><td>{{ e.flag_key }}</td><td>{{ e.variant_key }}</td><td><code>{{ e.parameter }}</code></td>
+          <td class="num">{{ e.value }}</td>
+          <td><form method="post" action="/simulator/effects/{{ e.id }}/delete" class="inline">
+              <button class="secondary" style="padding:.1rem .5rem">✕</button></form></td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">No effects configured — all variants behave identically (A/A).</p>{% endif %}
+
+    <form method="post" action="/simulator/effects" class="inline" style="margin-top:.6rem; flex-wrap:wrap">
+      <select name="flag_id">{% for f in flags %}<option value="{{ f.id }}">{{ f.key }}</option>{% endfor %}</select>
+      <input name="variant_key" value="treatment" style="width:7rem">
+      <select name="parameter">{% for p in parameters %}<option>{{ p }}</option>{% endfor %}</select>
+      <input type="number" step="any" name="value" placeholder="0.03" required>
+      <button class="secondary">Set effect</button>
+    </form>
+    <p class="muted">
+      <code>lesson_complete_uplift_pp</code>: +0.03 = +3&nbsp;pp completion probability ·
+      <code>watch_time_multiplier</code>: 1.10 = +10% watch seconds ·
+      <code>quiz_score_shift</code>: +2 points ·
+      <code>latency_add_ms</code>: +100 ms page latency ·
+      <code>activity_multiplier</code>: 1.05 = +5% daily visit probability (post-exposure).
+      Effects apply only on days the treated user <i>touches the feature surface</i>
+      (P = 0.7 per active day).
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Recent simulated days</h2>
+  {% if daily %}
+  <table>
+    <tr><th class="num">Sim day</th><th class="num">Events</th><th class="num">Active users</th></tr>
+    {% for d in daily %}
+    <tr><td class="num">{{ d.sim_day }}</td><td class="num">{{ d.n_events }}</td>
+        <td class="num">{{ d.n_users }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Negative days are the pre-period (no flags live).</p>
+  {% else %}<p class="muted">No events yet — initialize and advance the clock.</p>{% endif %}
+</div>
+{% endblock %}

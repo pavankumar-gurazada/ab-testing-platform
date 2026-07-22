@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Flags · A/B Platform{% endblock %}
+{% block content %}
+<h1>Feature flags</h1>
+
+<div class="card">
+  {% if flags %}
+  <table>
+    <tr><th>Flag</th><th>State</th><th class="num">Rollout %</th><th>Unit</th><th>Trigger</th>
+        <th class="num">Assigned</th><th class="num">Exposed</th></tr>
+    {% for f in flags %}
+    <tr>
+      <td><a href="/flags/{{ f.id }}">{{ f.name }}</a><br><span class="muted">{{ f.key }}</span></td>
+      <td><span class="badge {{ f.state }}">{{ f.state }}</span>
+          {% if f.paused %}<span class="badge paused">paused</span>{% endif %}</td>
+      <td class="num">{{ f.rollout_percent|round(1) }}</td>
+      <td>{{ f.randomization_unit }}</td>
+      <td>{{ f.exposure_trigger }}</td>
+      <td class="num">{{ f.n_assigned }}</td>
+      <td class="num">{{ f.n_exposed }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No flags yet.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">New flag</h2>
+  <form method="post" action="/flags" style="display:grid; grid-template-columns:repeat(2,minmax(200px,1fr)); gap:.6rem; max-width:640px">
+    <label>Application<br>
+      <select name="application_id">{% for a in applications %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Key <span class="muted">(unique slug)</span><br><input name="key" required placeholder="new-onboarding-flow"></label>
+    <label>Name<br><input name="name" required placeholder="New onboarding flow"></label>
+    <label>Description<br><input name="description"></label>
+    <label>Randomization unit<br>
+      <select name="randomization_unit">
+        <option value="user">user</option><option value="device">device</option><option value="session">session</option>
+      </select>
+    </label>
+    <label>Exposure trigger<br>
+      <select name="exposure_trigger">
+        <option value="exposure">exposure (unit saw the feature)</option>
+        <option value="assignment">assignment (unit was bucketed)</option>
+      </select>
+    </label>
+    <div><button>Create flag</button></div>
+  </form>
+  <p class="muted">New flags start in <b>draft</b> with a 50/50 control/treatment pair.</p>
+</div>
+{% endblock %}

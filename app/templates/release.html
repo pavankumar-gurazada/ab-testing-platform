@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Release · {{ exp.name }}{% endblock %}
+{% block content %}
+<h1>Release analytics <span class="muted">— {{ exp.name }}</span>
+  <span class="badge {{ exp.state }}">{{ exp.state }}</span></h1>
+<p class="muted"><a href="/experiments/{{ exp.id }}/analysis">← analysis</a> · flag
+<a href="/flags/{{ flag.id }}">{{ flag.key }}</a>
+{% if exp.end_sim_day is not none %} · ran sim days {{ exp.start_sim_day }}–{{ exp.end_sim_day }}{% endif %}</p>
+
+<div class="card">
+  <h2 style="margin-top:0">Experiment verdict</h2>
+  {% if final_look %}
+  <div class="kv">
+    <dt>Decision</dt><dd><b>{{ final_look.decision }}</b> at look {{ final_look.look_number }}
+      of {{ exp.planned_looks }}</dd>
+    <dt>Alpha used</dt><dd>{{ '%.5f'|format(looks_summary.spent or 0) }} of {{ exp.alpha }}
+      across {{ looks_summary.n }} looks</dd>
+    <dt>Information</dt><dd>{{ (final_look.information_fraction*100)|round(1) }}% of the
+      designed {{ exp.target_n_per_arm }}/arm</dd>
+  </div>
+  <table style="margin-top:.6rem">
+    <tr><th>Metric</th><th>Role</th><th class="num">control</th><th class="num">treatment</th>
+        <th class="num">effect</th><th class="num">CI</th><th class="num">p</th></tr>
+    {% for r in final_results %}
+    <tr>
+      <td>{{ r.metric_name }} {{ '↑' if r.direction=='increase' else '↓' }}</td>
+      <td><span class="badge {{ r.role }}">{{ r.role }}</span></td>
+      <td class="num">{{ '%.4g'|format(r.control_mean) }}</td>
+      <td class="num">{{ '%.4g'|format(r.treatment_mean) }}</td>
+      <td class="num"><b>{{ '%+.4g'|format(r.effect) }}</b></td>
+      <td class="num">[{{ '%.4g'|format(r.ci_low) }}, {{ '%.4g'|format(r.ci_high) }}]</td>
+      <td class="num">{{ '%.4f'|format(r.p_value) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No looks taken.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Launch impact</h2>
+  {% if launch %}
+  <p class="muted">Whole-population daily averages, 7 days before launch (day {{ launch.sim_day }})
+  vs everything after. This is a before/after comparison, not an experiment — time effects are
+  confounded with the launch; the causal answer is the experiment verdict above.</p>
+  <table>
+    <tr><th>Metric</th><th class="num">before</th><th class="num">after</th><th class="num">Δ%</th></tr>
+    {% for d in launch_delta %}
+    <tr><td>{{ d.metric.name }}</td>
+        <td class="num">{{ '%.4g'|format(d.before) }}</td>
+        <td class="num">{{ '%.4g'|format(d.after) }}</td>
+        <td class="num">{{ '%+.1f'|format(d.pct) if d.pct is not none else '—' }}%</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">The flag hasn't launched yet. After a winning experiment, launch it from the
+  <a href="/flags/{{ flag.id }}">flag page</a> and advance a few days to see population-level
+  release impact here.</p>
+  {% endif %}
+</div>
+{% endblock %}

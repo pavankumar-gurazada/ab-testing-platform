@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Preview · {{ metric.name }}{% endblock %}
+{% block content %}
+<h1>{{ metric.name }} <span class="muted">on {{ flag.name }}</span></h1>
+<p class="muted">Per-variant values as of sim day {{ as_of }}, population entry via
+<b>{{ flag.exposure_trigger }}</b>, window
+{{ metric.attribution_window_days if metric.attribution_window_days is not none else 'unbounded' }} days,
+missing = {{ metric.missing_value_policy }}
+{% if metric.winsorize_pct %} · winsorized at p{{ (metric.winsorize_pct*100)|round(0)|int }}
+({{ n_capped }} units capped){% endif %}</p>
+
+<div class="card">
+  {% if summary %}
+  <table>
+    <tr><th>Variant</th><th class="num">Units</th>
+      {% if metric.type == 'ratio' %}<th class="num">Numerator</th><th class="num">Denominator</th>{% endif %}
+      <th class="num">Value</th></tr>
+    {% for row in summary %}
+    <tr>
+      <td>{{ row.variant }}</td><td class="num">{{ row.n }}</td>
+      {% if metric.type == 'ratio' %}
+        <td class="num">{{ row.num|round(1) }}</td><td class="num">{{ row.den|round(1) }}</td>
+      {% endif %}
+      <td class="num"><b>{{ row.value|round(4) if row.value is not none else '—' }}</b></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">{{ n_units }} units in the analysis population. This is a raw comparison —
+  no test, no CI. Attach this metric to an <a href="/experiments">experiment</a> for inference.</p>
+  {% else %}
+  <p class="muted">No analysis population yet — the flag needs assigned/exposed units
+  (advance the simulator with the flag in rollout/experiment state).</p>
+  {% endif %}
+</div>
+<p><a href="/metrics">← metrics</a></p>
+{% endblock %}
